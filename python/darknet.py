@@ -1,6 +1,15 @@
 from ctypes import *
 import math
 import random
+import urllib.request
+import cv2
+import numpy as np
+import time
+
+# Replace the URL with your own IPwebcam shot.jpg IP:port
+url='http://192.168.1.75:8080/shot.jpg'
+print("got here")
+
 
 def sample(probs):
     s = sum(probs)
@@ -44,8 +53,8 @@ class METADATA(Structure):
 
     
 
-#lib = CDLL("/home/pjreddie/documents/darknet/libdarknet.so", RTLD_GLOBAL)
-lib = CDLL("libdarknet.so", RTLD_GLOBAL)
+lib = CDLL("/home/kineret/code/darknet/libdarknet.so", RTLD_GLOBAL)
+# lib = CDLL("libdarknet.so", RTLD_GLOBAL)
 lib.network_width.argtypes = [c_void_p]
 lib.network_width.restype = c_int
 lib.network_height.argtypes = [c_void_p]
@@ -61,6 +70,10 @@ set_gpu.argtypes = [c_int]
 make_image = lib.make_image
 make_image.argtypes = [c_int, c_int, c_int]
 make_image.restype = IMAGE
+
+ndarray_image = lib.ndarray_to_image
+ndarray_image.argtypes = [POINTER(c_ubyte), POINTER(c_long), POINTER(c_long)]
+ndarray_image.restype = IMAGE
 
 get_network_boxes = lib.get_network_boxes
 get_network_boxes.argtypes = [c_void_p, c_int, c_int, c_float, c_float, POINTER(c_int), c_int, POINTER(c_int)]
@@ -122,14 +135,14 @@ def classify(net, meta, im):
     res = sorted(res, key=lambda x: -x[1])
     return res
 
-def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
-    im = load_image(image, 0, 0)
+def detect1(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
+    im = load_image(bytes(image, encoding='utf-8'), 0, 0)
     num = c_int(0)
     pnum = pointer(num)
     predict_image(net, im)
     dets = get_network_boxes(net, im.w, im.h, thresh, hier_thresh, None, 0, pnum)
     num = pnum[0]
-    if (nms): do_nms_obj(dets, num, meta.classes, nms);
+    if (nms): do_nms_obj(dets, num, meta.classes, nms)
 
     res = []
     for j in range(num):
@@ -141,6 +154,58 @@ def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
     free_image(im)
     free_detections(dets, num)
     return res
+
+def convertBack(x, y, w, h):
+    xmin = int(round(x - (w / 2)))
+    xmax = int(round(x + (w / 2)))
+    ymin = int(round(y - (h / 2)))
+    ymax = int(round(y + (h / 2)))
+    return xmin, ymin, xmax, ymax
+
+def detect(net, meta, thresh=.5, hier_thresh=.5, nms=.45):
+    imgResp = urllib.request.urlopen(url)
+    print("got here")
+    imgNp = np.array(bytearray(imgResp.read()),dtype=np.uint8)
+    img = cv2.imdecode(imgNp,-1)
+    data = img.ctypes.data_as(POINTER(c_ubyte))
+    im = ndarray_image(data, img.ctypes.shape, img.ctypes.strides)
+    num = c_int(0)
+    pnum = pointer(num)
+    predict_image(net, im)
+    dets = get_network_boxes(net, im.w, im.h, thresh, hier_thresh, None, 0, pnum)
+    num = pnum[0]
+    if (nms): do_nms_obj(dets, num, meta.classes, nms)
+    res = []
+    for j in range(num):
+        for i in range(meta.classes):
+            if dets[j].prob[i] > 0:
+                b = dets[j].bbox
+                res.append((meta.names[i], dets[j].prob[i], (b.x, b.y, b.w, b.h)))
+    res = sorted(res, key=lambda x: -x[1])
+    for detection in res:
+        print(detection)
+        if(detection[1]>0.5):
+            x, y, w, h = detection[2][0], \
+                        detection[2][1], \
+                        detection[2][2], \
+                        detection[2][3]
+            xmin, ymin, xmax, ymax = convertBack(
+                float(x), float(y), float(w), float(h))
+            pt1 = (xmin, ymin)
+            pt2 = (xmax, ymax)
+            cv2.rectangle(img, pt1, pt2, (13, 23, 227), 4)
+            cv2.putText(img,
+                        detection[0].decode() +
+                        " [" + str(round(detection[1] * 100, 2)) + "]",
+                        (pt1[0], pt1[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        [0, 255, 0], 2)
+    cv2.imshow("IPcamera", np.array(img, dtype = np.uint8 ))   
+    cv2.imwrite('/home/kineret/code/try-cam/try.jpg', img)  
+    cv2.waitKey(0) 
+
+    free_image(im)
+    free_detections(dets, num)
+    return res
     
 if __name__ == "__main__":
     #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
@@ -148,9 +213,11 @@ if __name__ == "__main__":
     #meta = load_meta("cfg/imagenet1k.data")
     #r = classify(net, meta, im)
     #print r[:10]
-    net = load_net("cfg/tiny-yolo.cfg", "tiny-yolo.weights", 0)
-    meta = load_meta("cfg/coco.data")
-    r = detect(net, meta, "data/dog.jpg")
-    print(r)
+    net = load_net(bytes("/home/kineret/code/darknet/cfg/yolov3-tiny.cfg", encoding='utf-8'), bytes("/home/kineret/code/darknet/yolov3-tiny.weights", encoding='utf-8'),0)
+    print("got here")
+    meta = load_meta(bytes("/home/kineret/code/darknet/cfg/coco.data", encoding='utf-8'))
+    while True:
+        r = detect(net, meta)
+        print(r)
     
 

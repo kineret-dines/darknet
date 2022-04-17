@@ -61,6 +61,10 @@ void copy_image_into(image src, image dest);
 
 image get_image_layer(image m, int l);
 
+#ifdef NUMPY
+image ndarray_to_image(unsigned char* src, long* shape, long* strides);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
