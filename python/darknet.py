@@ -1,10 +1,9 @@
 from ctypes import *
-import math
 import random
 import urllib.request
 import cv2
 import numpy as np
-import time
+import threading
 
 # Replace the URL with your own IPwebcam shot.jpg IP:port
 url='http://192.168.1.75:8080/shot.jpg'
@@ -162,11 +161,17 @@ def convertBack(x, y, w, h):
     ymax = int(round(y + (h / 2)))
     return xmin, ymin, xmax, ymax
 
+def uiEvents(net, meta):
+    while True:
+        r = detect(net, meta)
+        print(r)    
+
 def detect(net, meta, thresh=.5, hier_thresh=.5, nms=.45):
     imgResp = urllib.request.urlopen(url)
     print("got here")
     imgNp = np.array(bytearray(imgResp.read()),dtype=np.uint8)
     img = cv2.imdecode(imgNp,-1)
+
     data = img.ctypes.data_as(POINTER(c_ubyte))
     im = ndarray_image(data, img.ctypes.shape, img.ctypes.strides)
     num = c_int(0)
@@ -199,13 +204,11 @@ def detect(net, meta, thresh=.5, hier_thresh=.5, nms=.45):
                         " [" + str(round(detection[1] * 100, 2)) + "]",
                         (pt1[0], pt1[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                         [0, 255, 0], 2)
-    cv2.imshow("IPcamera", np.array(img, dtype = np.uint8 ))   
-    cv2.imwrite('/home/kineret/code/try-cam/try.jpg', img)  
-    cv2.waitKey(0) 
-
+    cv2.imshow("Detect", np.array(img, dtype = np.uint8 ))   
+    #cv2.imwrite('/home/kineret/code/try-cam/try.jpg', img)  
     free_image(im)
     free_detections(dets, num)
-    return res
+    return res      
     
 if __name__ == "__main__":
     #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
@@ -213,11 +216,15 @@ if __name__ == "__main__":
     #meta = load_meta("cfg/imagenet1k.data")
     #r = classify(net, meta, im)
     #print r[:10]
-    net = load_net(bytes("/home/kineret/code/darknet/cfg/yolov3-tiny.cfg", encoding='utf-8'), bytes("/home/kineret/code/darknet/yolov3-tiny.weights", encoding='utf-8'),0)
+    net = load_net(bytes("/home/kineret/code/darknet/cfg/yolov3.cfg", encoding='utf-8'), bytes("/home/kineret/code/darknet/yolov3.weights", encoding='utf-8'),0)
     print("got here")
     meta = load_meta(bytes("/home/kineret/code/darknet/cfg/coco.data", encoding='utf-8'))
+
+    #deal with window management
+    displayWindow = cv2.namedWindow("Detect", cv2.WINDOW_NORMAL)
+    th = threading.Thread(target=uiEvents, args=(net, meta))
+    th.start()
     while True:
-        r = detect(net, meta)
-        print(r)
+        cv2.waitKey()
     
 
