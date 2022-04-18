@@ -7,8 +7,11 @@ import threading
 
 # Replace the URL with your own IPwebcam shot.jpg IP:port
 url='http://192.168.1.75:8080/shot.jpg'
-print("got here")
 
+xThreshold = 100
+yThreshold = 100
+
+running = True
 
 def sample(probs):
     s = sum(probs)
@@ -161,17 +164,61 @@ def convertBack(x, y, w, h):
     ymax = int(round(y + (h / 2)))
     return xmin, ymin, xmax, ymax
 
-def uiEvents(net, meta):
-    while True:
+def objectInList(i, prevR):
+    for k in prevR:
+        if sameObject(i, k):
+            return True
+    return False
+
+def sameObject(i, k):
+    # object type
+    if(i[0] != k[0]):
+        return False
+
+    if(abs(i[2][0] - k[2][0]) > xThreshold or abs(i[2][1] - k[2][1]) > yThreshold ):
+        return False
+
+    return True
+
+def drawObject(i, img):
+    print(i)
+    x, y, w, h = i[2][0], \
+                i[2][1], \
+                i[2][2], \
+                i[2][3]
+    xmin, ymin, xmax, ymax = convertBack(
+        float(x), float(y), float(w), float(h))
+    pt1 = (xmin, ymin)
+    pt2 = (xmax, ymax)
+    cv2.rectangle(img, pt1, pt2, (13, 23, 227), 4)
+    cv2.putText(img,
+                i[0].decode() +
+                " [" + str(round(i[1] * 100, 2)) + "]",
+                (pt1[0], pt1[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                [0, 255, 0], 2)
+
+def detectLoop(net, meta):
+    prevR = []
+    while running:
         r = detect(net, meta)
-        print(r)    
+        print(r)
+        for i in r[0]:
+            if(i[1] > 0.5):
+                if not objectInList(i, prevR):
+                    drawObject(i, r[1])
+                
+        prevR = r[0]
+        if running:
+            cv2.imshow("Detect", np.array(r[1], dtype = np.uint8 ))   
+    print ("exiting from thread")
 
 def detect(net, meta, thresh=.5, hier_thresh=.5, nms=.45):
     imgResp = urllib.request.urlopen(url)
     print("got here")
     imgNp = np.array(bytearray(imgResp.read()),dtype=np.uint8)
-    img = cv2.imdecode(imgNp,-1)
+    img = cv2.imdecode(imgNp, cv2.IMREAD_UNCHANGED)
 
+# https://github.com/pjreddie/darknet/issues/289#issuecomment-342448358
     data = img.ctypes.data_as(POINTER(c_ubyte))
     im = ndarray_image(data, img.ctypes.shape, img.ctypes.strides)
     num = c_int(0)
@@ -179,7 +226,8 @@ def detect(net, meta, thresh=.5, hier_thresh=.5, nms=.45):
     predict_image(net, im)
     dets = get_network_boxes(net, im.w, im.h, thresh, hier_thresh, None, 0, pnum)
     num = pnum[0]
-    if (nms): do_nms_obj(dets, num, meta.classes, nms)
+    if (nms): 
+        do_nms_obj(dets, num, meta.classes, nms)
     res = []
     for j in range(num):
         for i in range(meta.classes):
@@ -187,28 +235,10 @@ def detect(net, meta, thresh=.5, hier_thresh=.5, nms=.45):
                 b = dets[j].bbox
                 res.append((meta.names[i], dets[j].prob[i], (b.x, b.y, b.w, b.h)))
     res = sorted(res, key=lambda x: -x[1])
-    for detection in res:
-        print(detection)
-        if(detection[1]>0.5):
-            x, y, w, h = detection[2][0], \
-                        detection[2][1], \
-                        detection[2][2], \
-                        detection[2][3]
-            xmin, ymin, xmax, ymax = convertBack(
-                float(x), float(y), float(w), float(h))
-            pt1 = (xmin, ymin)
-            pt2 = (xmax, ymax)
-            cv2.rectangle(img, pt1, pt2, (13, 23, 227), 4)
-            cv2.putText(img,
-                        detection[0].decode() +
-                        " [" + str(round(detection[1] * 100, 2)) + "]",
-                        (pt1[0], pt1[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        [0, 255, 0], 2)
-    cv2.imshow("Detect", np.array(img, dtype = np.uint8 ))   
     #cv2.imwrite('/home/kineret/code/try-cam/try.jpg', img)  
     free_image(im)
     free_detections(dets, num)
-    return res      
+    return res, img     
     
 if __name__ == "__main__":
     #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
@@ -220,11 +250,13 @@ if __name__ == "__main__":
     print("got here")
     meta = load_meta(bytes("/home/kineret/code/darknet/cfg/coco.data", encoding='utf-8'))
 
-    #deal with window management
-    displayWindow = cv2.namedWindow("Detect", cv2.WINDOW_NORMAL)
-    th = threading.Thread(target=uiEvents, args=(net, meta))
-    th.start()
-    while True:
-        cv2.waitKey()
-    
+    cv2.namedWindow("Detect", cv2.WINDOW_NORMAL)
 
+    th = threading.Thread(target=detectLoop, args=(net, meta))
+    th.start()
+
+    cv2.waitKey()
+    running = False
+
+    print("Exiting")
+    th.join()

@@ -1465,6 +1465,7 @@ void free_image(image m)
     }
 }
 
+/* from https://github.com/pjreddie/darknet/issues/289#issuecomment-342448358 */
 #ifdef NUMPY
 image ndarray_to_image(unsigned char* src, long* shape, long* strides)
 {
