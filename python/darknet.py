@@ -56,7 +56,6 @@ class METADATA(Structure):
     
 
 lib = CDLL("/home/kineret/code/darknet/libdarknet.so", RTLD_GLOBAL)
-# lib = CDLL("libdarknet.so", RTLD_GLOBAL)
 lib.network_width.argtypes = [c_void_p]
 lib.network_width.restype = c_int
 lib.network_height.argtypes = [c_void_p]
@@ -128,34 +127,6 @@ rgbgr_image.argtypes = [IMAGE]
 predict_image = lib.network_predict_image
 predict_image.argtypes = [c_void_p, IMAGE]
 predict_image.restype = POINTER(c_float)
-
-def classify(net, meta, im):
-    out = predict_image(net, im)
-    res = []
-    for i in range(meta.classes):
-        res.append((meta.names[i], out[i]))
-    res = sorted(res, key=lambda x: -x[1])
-    return res
-
-def detect1(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
-    im = load_image(bytes(image, encoding='utf-8'), 0, 0)
-    num = c_int(0)
-    pnum = pointer(num)
-    predict_image(net, im)
-    dets = get_network_boxes(net, im.w, im.h, thresh, hier_thresh, None, 0, pnum)
-    num = pnum[0]
-    if (nms): do_nms_obj(dets, num, meta.classes, nms)
-
-    res = []
-    for j in range(num):
-        for i in range(meta.classes):
-            if dets[j].prob[i] > 0:
-                b = dets[j].bbox
-                res.append((meta.names[i], dets[j].prob[i], (b.x, b.y, b.w, b.h)))
-    res = sorted(res, key=lambda x: -x[1])
-    free_image(im)
-    free_detections(dets, num)
-    return res
 
 def convertBack(x, y, w, h):
     xmin = int(round(x - (w / 2)))
@@ -241,11 +212,6 @@ def detect(net, meta, thresh=.5, hier_thresh=.5, nms=.45):
     return res, img     
     
 if __name__ == "__main__":
-    #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
-    #im = load_image("data/wolf.jpg", 0, 0)
-    #meta = load_meta("cfg/imagenet1k.data")
-    #r = classify(net, meta, im)
-    #print r[:10]
     net = load_net(bytes("/home/kineret/code/darknet/cfg/yolov3.cfg", encoding='utf-8'), bytes("/home/kineret/code/darknet/yolov3.weights", encoding='utf-8'),0)
     print("got here")
     meta = load_meta(bytes("/home/kineret/code/darknet/cfg/coco.data", encoding='utf-8'))
